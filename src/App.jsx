@@ -11,7 +11,7 @@ import {
 
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const RPC_URL = "https://soroban-testnet.stellar.org";
-const CONTRACT_ID = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCN4";
+const CONTRACT_ID = "CA7S27CDLIGZMZT3FMBROSGCJRP4BNPWDXUN5MKTKOVX3RGAGLSVT4EA";
 
 const SUPPORTED_WALLETS = [
   { id: "freighter", name: "Freighter", icon: "⚡" },
@@ -194,11 +194,7 @@ function App() {
       const data = await response.json();
       const ledger = data.result?.sequence;
 
-      setContractResult(`✅ Contract called successfully!
-📋 Contract ID: ${CONTRACT_ID}
-📦 Latest Ledger: ${ledger}
-🌐 Network: Stellar Testnet`);
-
+      setContractResult(`✅ Contract called successfully!\n📋 Contract ID: ${CONTRACT_ID}\n📦 Latest Ledger: ${ledger}\n🌐 Network: Stellar Testnet`);
       addEvent(`✅ Contract called! Ledger: ${ledger}`);
 
     } catch (err) {
@@ -214,23 +210,25 @@ function App() {
       fontFamily: "'Segoe UI', Arial, sans-serif",
       maxWidth: "650px",
       margin: "0 auto",
-      padding: "20px",
+      padding: "16px",
       background: "#f8fafc",
-      minHeight: "100vh"
+      minHeight: "100vh",
+      boxSizing: "border-box",
+      width: "100%",
     }}>
 
       {/* Header */}
       <div style={{
         textAlign: "center",
-        marginBottom: "25px",
-        padding: "25px",
+        marginBottom: "20px",
+        padding: "20px 16px",
         background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
         borderRadius: "16px",
         color: "white"
       }}>
-        <h1 style={{ margin: 0, fontSize: "28px" }}>🔗 TrustChain Final</h1>
-        <p style={{ margin: "8px 0 0 0", opacity: 0.9 }}>
-          Level 3 — Complete Stellar dApp with Smart Contract & Tests
+        <h1 style={{ margin: 0, fontSize: "clamp(20px, 5vw, 28px)" }}>🔗 TrustChain Pro</h1>
+        <p style={{ margin: "8px 0 0 0", opacity: 0.9, fontSize: "clamp(12px, 3vw, 14px)" }}>
+          Level 4 — Production Ready Stellar dApp with CI/CD
         </p>
       </div>
 
@@ -242,7 +240,8 @@ function App() {
           borderRadius: "10px",
           padding: "12px",
           marginBottom: "15px",
-          color: "#cc0000"
+          color: "#cc0000",
+          fontSize: "clamp(12px, 3vw, 14px)"
         }}>
           {error}
         </div>
@@ -253,11 +252,12 @@ function App() {
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
           background: "rgba(0,0,0,0.6)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+          padding: "16px",
         }}>
           <div style={{
             background: "white", borderRadius: "16px",
-            padding: "28px", width: "320px",
+            padding: "24px", width: "100%", maxWidth: "320px",
             boxShadow: "0 20px 60px rgba(0,0,0,0.3)"
           }}>
             <h3 style={{ margin: "0 0 20px 0", textAlign: "center" }}>
@@ -302,11 +302,12 @@ function App() {
         <div style={{ textAlign: "center", marginTop: "50px" }}>
           <button onClick={() => setShowWalletModal(true)} disabled={loading}
             style={{
-              padding: "16px 40px", fontSize: "17px",
+              padding: "16px 40px", fontSize: "clamp(14px, 4vw, 17px)",
               background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
               color: "white", border: "none",
               borderRadius: "12px", cursor: "pointer",
-              boxShadow: "0 4px 15px rgba(99,102,241,0.4)"
+              boxShadow: "0 4px 15px rgba(99,102,241,0.4)",
+              width: "100%", maxWidth: "300px"
             }}>
             {loading ? "Connecting..." : "🔌 Connect Wallet"}
           </button>
@@ -319,20 +320,20 @@ function App() {
           {/* Wallet Info */}
           <div style={{
             border: "1px solid #e2e8f0", borderRadius: "12px",
-            padding: "20px", marginBottom: "15px",
+            padding: "16px", marginBottom: "15px",
             background: "white",
             boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
           }}>
-            <p style={{ margin: "0 0 5px 0", color: "#6366f1" }}>
+            <p style={{ margin: "0 0 5px 0", color: "#6366f1", fontSize: "clamp(13px, 3vw, 15px)" }}>
               <b>✅ Connected via {selectedWallet}</b>
             </p>
             <p style={{
-              wordBreak: "break-all", fontSize: "12px",
+              wordBreak: "break-all", fontSize: "11px",
               color: "#888", margin: "5px 0",
               background: "#f8fafc", padding: "8px",
               borderRadius: "6px"
             }}>{wallet}</p>
-            <p style={{ fontSize: "24px", margin: "10px 0", fontWeight: "bold" }}>
+            <p style={{ fontSize: "clamp(18px, 5vw, 24px)", margin: "10px 0", fontWeight: "bold" }}>
               {balance} <span style={{ color: "#6366f1" }}>XLM</span>
             </p>
             <button onClick={disconnectWallet}
@@ -348,13 +349,13 @@ function App() {
           {/* Smart Contract */}
           <div style={{
             border: "2px solid #6366f1", borderRadius: "12px",
-            padding: "20px", marginBottom: "15px",
+            padding: "16px", marginBottom: "15px",
             background: "white",
             boxShadow: "0 2px 8px rgba(99,102,241,0.1)"
           }}>
-            <h3 style={{ margin: "0 0 8px 0", color: "#6366f1" }}>📜 Smart Contract</h3>
-            <p style={{ fontSize: "12px", color: "#888", margin: "0 0 12px 0" }}>
-              ID: {CONTRACT_ID.slice(0, 25)}...
+            <h3 style={{ margin: "0 0 8px 0", color: "#6366f1", fontSize: "clamp(14px, 4vw, 16px)" }}>📜 Smart Contract</h3>
+            <p style={{ fontSize: "11px", color: "#888", margin: "0 0 12px 0", wordBreak: "break-all" }}>
+              ID: {CONTRACT_ID}
             </p>
             <button onClick={callContract} disabled={contractLoading}
               style={{
@@ -370,7 +371,7 @@ function App() {
                 marginTop: "12px", padding: "12px",
                 background: "#f0f0ff", borderRadius: "8px",
                 fontSize: "13px", whiteSpace: "pre-line",
-                border: "1px solid #c7d2fe"
+                border: "1px solid #c7d2fe", wordBreak: "break-all"
               }}>
                 {contractResult}
               </div>
@@ -380,11 +381,11 @@ function App() {
           {/* Send XLM */}
           <div style={{
             border: "1px solid #e2e8f0", borderRadius: "12px",
-            padding: "20px", marginBottom: "15px",
+            padding: "16px", marginBottom: "15px",
             background: "white",
             boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
           }}>
-            <h3 style={{ margin: "0 0 15px 0" }}>💸 Send XLM</h3>
+            <h3 style={{ margin: "0 0 15px 0", fontSize: "clamp(14px, 4vw, 16px)" }}>💸 Send XLM</h3>
             <input type="text" placeholder="Recipient Address (G...)"
               value={recipient} onChange={e => setRecipient(e.target.value)}
               style={{
@@ -414,25 +415,25 @@ function App() {
           {txStatus && (
             <div style={{
               border: "1px solid #e2e8f0", borderRadius: "12px",
-              padding: "20px", marginBottom: "15px",
+              padding: "16px", marginBottom: "15px",
               background: txStatus.includes("✅") ? "#f0fff4" :
                 txStatus.includes("⏳") ? "#fffbe6" : "#fff0f0",
               boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
             }}>
-              <h3 style={{ margin: "0 0 10px 0" }}>📊 Transaction Status</h3>
-              <p style={{ fontSize: "16px", margin: 0 }}>{txStatus}</p>
+              <h3 style={{ margin: "0 0 10px 0", fontSize: "clamp(14px, 4vw, 16px)" }}>📊 Transaction Status</h3>
+              <p style={{ fontSize: "clamp(13px, 3vw, 16px)", margin: 0 }}>{txStatus}</p>
               {txHash && (
                 <div style={{ marginTop: "12px" }}>
-                  <p style={{ margin: "5px 0", fontWeight: "bold" }}>Transaction Hash:</p>
+                  <p style={{ margin: "5px 0", fontWeight: "bold", fontSize: "13px" }}>Transaction Hash:</p>
                   <p style={{
-                    wordBreak: "break-all", fontSize: "12px",
+                    wordBreak: "break-all", fontSize: "11px",
                     color: "#555", margin: "5px 0",
                     background: "#f8fafc", padding: "8px",
                     borderRadius: "6px"
                   }}>{txHash}</p>
                   <a href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
                     target="_blank" rel="noreferrer"
-                    style={{ color: "#6366f1", fontWeight: "500" }}>
+                    style={{ color: "#6366f1", fontWeight: "500", fontSize: "13px" }}>
                     View on Stellar Explorer →
                   </a>
                 </div>
@@ -445,10 +446,10 @@ function App() {
       {/* Live Activity Feed */}
       <div style={{
         border: "1px solid #e2e8f0", borderRadius: "12px",
-        padding: "20px", background: "white",
+        padding: "16px", background: "white",
         boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
       }}>
-        <h3 style={{ margin: "0 0 12px 0" }}>⚡ Live Activity Feed</h3>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: "clamp(14px, 4vw, 16px)" }}>⚡ Live Activity Feed</h3>
         {events.length === 0 ? (
           <p style={{ color: "gray", fontSize: "13px", margin: 0 }}>
             No activity yet...
@@ -457,14 +458,13 @@ function App() {
           events.map((event, i) => (
             <div key={i} style={{
               padding: "8px 0", borderBottom: "1px solid #f1f5f9",
-              fontSize: "13px", color: "#444"
+              fontSize: "clamp(11px, 3vw, 13px)", color: "#444"
             }}>
               {event}
             </div>
           ))
         )}
       </div>
-
     </div>
   );
 }
