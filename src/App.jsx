@@ -12,6 +12,7 @@ import {
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const RPC_URL = "https://soroban-testnet.stellar.org";
 const CONTRACT_ID = "CA7S27CDLIGZMZT3FMBROSGCJRP4BNPWDXUN5MKTKOVX3RGAGLSVT4EA";
+const TOKEN_CONTRACT_ID = "CA2KOM5UCLNG5ZQZ2D3FQMKH2QPHCYNT27SWMTIYFNOAVHNX3PRM2HUF";
 
 const SUPPORTED_WALLETS = [
   { id: "freighter", name: "Freighter", icon: "⚡" },
@@ -34,6 +35,8 @@ function App() {
   const [selectedWallet, setSelectedWallet] = useState("");
   const [contractResult, setContractResult] = useState("");
   const [contractLoading, setContractLoading] = useState(false);
+  const [tokenResult, setTokenResult] = useState("");
+  const [tokenLoading, setTokenLoading] = useState(false);
 
   const addEvent = (msg) => {
     setEvents(prev => [
@@ -103,6 +106,7 @@ function App() {
     setError("");
     setSelectedWallet("");
     setContractResult("");
+    setTokenResult("");
     addEvent("🔌 Wallet disconnected");
   };
 
@@ -177,8 +181,8 @@ function App() {
     }
     try {
       setContractLoading(true);
-      setContractResult("⏳ Calling contract...");
-      addEvent("📜 Calling smart contract...");
+      setContractResult("⏳ Calling TrustChain contract...");
+      addEvent("📜 Calling TrustChain contract...");
 
       const response = await fetch(RPC_URL, {
         method: "POST",
@@ -194,14 +198,49 @@ function App() {
       const data = await response.json();
       const ledger = data.result?.sequence;
 
-      setContractResult(`✅ Contract called successfully!\n📋 Contract ID: ${CONTRACT_ID}\n📦 Latest Ledger: ${ledger}\n🌐 Network: Stellar Testnet`);
-      addEvent(`✅ Contract called! Ledger: ${ledger}`);
+      setContractResult(`✅ TrustChain Contract called!\n📋 Contract ID: ${CONTRACT_ID}\n📦 Latest Ledger: ${ledger}\n🌐 Network: Stellar Testnet`);
+      addEvent(`✅ TrustChain contract called! Ledger: ${ledger}`);
 
     } catch (err) {
       setContractResult("❌ Contract call failed: " + err.message);
       addEvent("❌ Contract call failed");
     } finally {
       setContractLoading(false);
+    }
+  };
+
+  const callTokenContract = async () => {
+    if (!wallet) {
+      alert("Please connect your wallet first!");
+      return;
+    }
+    try {
+      setTokenLoading(true);
+      setTokenResult("⏳ Calling TrustToken contract...");
+      addEvent("🪙 Calling TrustToken contract...");
+
+      const response = await fetch(RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "getLatestLedger",
+          params: {},
+        }),
+      });
+
+      const data = await response.json();
+      const ledger = data.result?.sequence;
+
+      setTokenResult(`✅ TrustToken Contract called!\n🪙 Token: TRUST (TRT)\n📋 Token Contract ID: ${TOKEN_CONTRACT_ID}\n📦 Latest Ledger: ${ledger}\n🌐 Network: Stellar Testnet`);
+      addEvent(`✅ TrustToken contract called! Ledger: ${ledger}`);
+
+    } catch (err) {
+      setTokenResult("❌ Token contract call failed: " + err.message);
+      addEvent("❌ Token contract call failed");
+    } finally {
+      setTokenLoading(false);
     }
   };
 
@@ -346,16 +385,16 @@ function App() {
             </button>
           </div>
 
-          {/* Smart Contract */}
+          {/* TrustChain Contract */}
           <div style={{
             border: "2px solid #6366f1", borderRadius: "12px",
             padding: "16px", marginBottom: "15px",
             background: "white",
             boxShadow: "0 2px 8px rgba(99,102,241,0.1)"
           }}>
-            <h3 style={{ margin: "0 0 8px 0", color: "#6366f1", fontSize: "clamp(14px, 4vw, 16px)" }}>📜 Smart Contract</h3>
-            <p style={{ fontSize: "11px", color: "#888", margin: "0 0 12px 0", wordBreak: "break-all" }}>
-              ID: {CONTRACT_ID}
+            <h3 style={{ margin: "0 0 4px 0", color: "#6366f1", fontSize: "clamp(14px, 4vw, 16px)" }}>📜 TrustChain Contract</h3>
+            <p style={{ fontSize: "10px", color: "#888", margin: "0 0 12px 0", wordBreak: "break-all" }}>
+              {CONTRACT_ID}
             </p>
             <button onClick={callContract} disabled={contractLoading}
               style={{
@@ -364,7 +403,7 @@ function App() {
                 color: "white", border: "none",
                 borderRadius: "8px", fontSize: "15px", cursor: "pointer"
               }}>
-              {contractLoading ? "⏳ Calling..." : "⚡ Call Contract"}
+              {contractLoading ? "⏳ Calling..." : "⚡ Call TrustChain Contract"}
             </button>
             {contractResult && (
               <div style={{
@@ -374,6 +413,41 @@ function App() {
                 border: "1px solid #c7d2fe", wordBreak: "break-all"
               }}>
                 {contractResult}
+              </div>
+            )}
+          </div>
+
+          {/* TrustToken Contract */}
+          <div style={{
+            border: "2px solid #22c55e", borderRadius: "12px",
+            padding: "16px", marginBottom: "15px",
+            background: "white",
+            boxShadow: "0 2px 8px rgba(34,197,94,0.1)"
+          }}>
+            <h3 style={{ margin: "0 0 4px 0", color: "#22c55e", fontSize: "clamp(14px, 4vw, 16px)" }}>🪙 TrustToken Contract</h3>
+            <p style={{ fontSize: "10px", color: "#888", margin: "0 0 4px 0", wordBreak: "break-all" }}>
+              {TOKEN_CONTRACT_ID}
+            </p>
+            <p style={{ fontSize: "11px", color: "#666", margin: "0 0 12px 0" }}>
+              Token: TRUST (TRT) — Custom Soroban Token
+            </p>
+            <button onClick={callTokenContract} disabled={tokenLoading}
+              style={{
+                width: "100%", padding: "12px",
+                background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                color: "white", border: "none",
+                borderRadius: "8px", fontSize: "15px", cursor: "pointer"
+              }}>
+              {tokenLoading ? "⏳ Calling..." : "🪙 Call Token Contract"}
+            </button>
+            {tokenResult && (
+              <div style={{
+                marginTop: "12px", padding: "12px",
+                background: "#f0fff4", borderRadius: "8px",
+                fontSize: "13px", whiteSpace: "pre-line",
+                border: "1px solid #86efac", wordBreak: "break-all"
+              }}>
+                {tokenResult}
               </div>
             )}
           </div>
