@@ -1,543 +1,429 @@
 import { useState } from "react";
 import { requestAccess, signTransaction, isConnected } from "@stellar/freighter-api";
 import {
-  TransactionBuilder,
-  Networks,
-  Operation,
-  Asset,
-  BASE_FEE,
-  Account,
+  TransactionBuilder, Networks, Operation, Asset,
+  BASE_FEE, Account, Memo,
 } from "stellar-sdk";
 
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
-const RPC_URL = "https://soroban-testnet.stellar.org";
 const CONTRACT_ID = "CBKD4WAM25RMVZ7KFZE5IUFYW7HWLEHY2F6QU5VQ4NEZIZXEOL7DEQSK";
 const TOKEN_CONTRACT_ID = "CA2KOM5UCLNG5ZQZ2D3FQMKH2QPHCYNT27SWMTIYFNOAVHNX3PRM2HUF";
+const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScCgc-YNdstJDQCW2sVOVOh6xXkwvCVLBGP9bX-eZvxf30sRA/viewform";
+const RPC_URL = "https://soroban-testnet.stellar.org";
 
-const SUPPORTED_WALLETS = [
-  { id: "freighter", name: "Freighter", icon: "⚡" },
-  { id: "xbull", name: "xBull", icon: "🐂" },
-  { id: "albedo", name: "Albedo", icon: "🌟" },
+const TABS = [
+  { id: "escrow", label: "💼 Escrow", desc: "Freelancer Payments" },
+  { id: "remittance", label: "💸 Remittance", desc: "Cross-border Transfers" },
+  { id: "loyalty", label: "🎁 Loyalty", desc: "Earn TRUST Tokens" },
+  { id: "certificate", label: "🎓 Certificate", desc: "On-chain Verification" },
+  { id: "crowdfunding", label: "🌱 Crowdfunding", desc: "Fund Campaigns" },
 ];
+
+const sendTx = async (wallet, ops, memo) => {
+  const res = await fetch(`${HORIZON_URL}/accounts/${wallet}`);
+  const data = await res.json();
+  if (!data.sequence) throw new Error("Account not found. Fund your wallet first.");
+  const account = new Account(wallet, data.sequence);
+  let builder = new TransactionBuilder(account, {
+    fee: BASE_FEE, networkPassphrase: Networks.TESTNET,
+  });
+  ops.forEach(op => builder.addOperation(op));
+  if (memo) builder.addMemo(Memo.text(memo));
+  const tx = builder.setTimeout(30).build();
+  const signResult = await signTransaction(tx.toXDR(), { networkPassphrase: Networks.TESTNET });
+  const signedXDR = typeof signResult === "string" ? signResult :
+    signResult?.signedTxXdr || signResult?.result?.signedTxXdr || signResult?.xdr;
+  if (!signedXDR) throw new Error("Could not get signed XDR from Freighter");
+  const submitRes = await fetch(`${HORIZON_URL}/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `tx=${encodeURIComponent(signedXDR)}`,
+  });
+  const submitData = await submitRes.json();
+  if (!submitData.hash) throw new Error("TX failed: " + JSON.stringify(submitData?.extras?.result_codes));
+  return submitData.hash;
+};
 
 function App() {
   const [wallet, setWallet] = useState("");
   const [balance, setBalance] = useState("");
   const [loading, setLoading] = useState(false);
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
-  const [txStatus, setTxStatus] = useState("");
-  const [txHash, setTxHash] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("escrow");
   const [events, setEvents] = useState([]);
-  const [showWalletModal, setShowWalletModal] = useState(false);
-  const [selectedWallet, setSelectedWallet] = useState("");
-  const [contractResult, setContractResult] = useState("");
-  const [contractLoading, setContractLoading] = useState(false);
-  const [tokenResult, setTokenResult] = useState("");
-  const [tokenLoading, setTokenLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const addEvent = (msg) => {
-    setEvents(prev => [
-      `${new Date().toLocaleTimeString()} — ${msg}`,
-      ...prev.slice(0, 9)
-    ]);
+  const [escrowRecipient, setEscrowRecipient] = useState("");
+  const [escrowAmount, setEscrowAmount] = useState("");
+  const [escrowWork, setEscrowWork] = useState("");
+  const [escrowHash, setEscrowHash] = useState("");
+  const [escrowLoading, setEscrowLoading] = useState(false);
+
+  const [remitRecipient, setRemitRecipient] = useState("");
+  const [remitAmount, setRemitAmount] = useState("");
+  const [remitCountry, setRemitCountry] = useState("");
+  const [remitHash, setRemitHash] = useState("");
+  const [remitLoading, setRemitLoading] = useState(false);
+
+  const [loyaltyHash, setLoyaltyHash] = useState("");
+  const [loyaltyLoading, setLoyaltyLoading] = useState(false);
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+
+  const [certName, setCertName] = useState("");
+  const [certCourse, setCertCourse] = useState("");
+  const [certDate, setCertDate] = useState("");
+  const [certHash, setCertHash] = useState("");
+  const [certLoading, setCertLoading] = useState(false);
+  const [verifyCert, setVerifyCert] = useState("");
+  const [verifyResult, setVerifyResult] = useState("");
+
+  const [campaignTitle, setCampaignTitle] = useState("");
+  const [campaignGoal, setCampaignGoal] = useState("");
+  const [campaignDonate, setCampaignDonate] = useState("");
+  const [campaignCreator, setCampaignCreator] = useState("");
+  const [campaignHash, setCampaignHash] = useState("");
+  const [campaignLoading, setCampaignLoading] = useState(false);
+
+  const addEvent = (msg) => setEvents(prev => [`${new Date().toLocaleTimeString()} — ${msg}`, ...prev.slice(0, 9)]);
+
+  const fetchBalance = async (pk) => {
+    const r = await fetch(`${HORIZON_URL}/accounts/${pk}`);
+    if (!r.ok) throw new Error("Account not found");
+    const d = await r.json();
+    const b = d.balances?.find(b => b.asset_type === "native");
+    setBalance(b ? parseFloat(b.balance).toFixed(2) : "0");
   };
 
-  const fetchBalance = async (publicKey) => {
+  const connectWallet = async () => {
     try {
-      const response = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
-      if (!response.ok) throw new Error("Account not found on testnet");
-      const data = await response.json();
-      const xlmBalance = data.balances?.find(b => b.asset_type === "native");
-      setBalance(xlmBalance ? xlmBalance.balance : "0");
-    } catch (err) {
-      setError("❌ Error Type 1: Account not found on testnet. Fund your wallet first.");
-      addEvent("❌ Error: Account not found on testnet");
-    }
-  };
-
-  const connectWallet = async (walletId) => {
-    try {
-      setLoading(true);
-      setError("");
-      setShowWalletModal(false);
-      addEvent(`Connecting to ${walletId}...`);
-
-      if (walletId !== "freighter") {
-        setError(`❌ Error Type 2: ${walletId} wallet is not installed. Please use Freighter.`);
-        addEvent(`❌ Error: ${walletId} not installed`);
-        setLoading(false);
-        return;
-      }
-
+      setLoading(true); setError("");
       const connected = await isConnected();
-      if (!connected) throw new Error("Freighter extension not found");
-
+      if (!connected) throw new Error("Freighter not found. Install it first.");
       const result = await requestAccess();
-      const publicKey = result.address || result;
-
-      if (!publicKey) throw new Error("User rejected wallet access");
-
-      setWallet(publicKey);
-      setSelectedWallet(walletId);
-      addEvent(`✅ Connected: ${publicKey.slice(0, 8)}...`);
-      await fetchBalance(publicKey);
-
-    } catch (err) {
-      if (err.message.includes("rejected") || err.message.includes("User")) {
-        setError("❌ Error Type 3: User rejected wallet connection.");
-        addEvent("❌ Error: User rejected connection");
-      } else {
-        setError("❌ Error: " + err.message);
-        addEvent("❌ Error: " + err.message);
-      }
+      const pk = result.address || result;
+      if (!pk) throw new Error("Wallet access rejected");
+      setWallet(pk);
+      await fetchBalance(pk);
+      addEvent(`✅ Connected: ${pk.slice(0, 8)}...`);
+    } catch (e) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const disconnectWallet = () => {
-    setWallet("");
-    setBalance("");
-    setTxStatus("");
-    setTxHash("");
-    setError("");
-    setSelectedWallet("");
-    setContractResult("");
-    setTokenResult("");
-    addEvent("🔌 Wallet disconnected");
+  const createEscrow = async () => {
+    if (!escrowRecipient || !escrowAmount || !escrowWork) return alert("Fill all escrow fields!");
+    try {
+      setEscrowLoading(true); setEscrowHash("");
+      addEvent("💼 Creating escrow...");
+      const hash = await sendTx(wallet, [
+        Operation.payment({ destination: escrowRecipient, asset: Asset.native(), amount: escrowAmount })
+      ], `escrow:${escrowWork.slice(0, 20)}`);
+      setEscrowHash(hash);
+      setLoyaltyPoints(p => p + 10);
+      addEvent(`✅ Escrow created: ${hash.slice(0, 12)}...`);
+      setEscrowRecipient(""); setEscrowAmount(""); setEscrowWork("");
+      await fetchBalance(wallet);
+    } catch (e) { addEvent("❌ " + e.message); alert(e.message); }
+    finally { setEscrowLoading(false); }
   };
 
-  const sendXLM = async () => {
-    if (!recipient || !amount) {
-      alert("Please enter recipient address and amount!");
-      return;
-    }
+  const sendRemittance = async () => {
+    if (!remitRecipient || !remitAmount || !remitCountry) return alert("Fill all remittance fields!");
     try {
-      setSending(true);
-      setTxStatus("⏳ Pending — Processing transaction...");
-      setTxHash("");
-      addEvent("💸 Transaction initiated...");
+      setRemitLoading(true); setRemitHash("");
+      addEvent("💸 Sending remittance...");
+      const hash = await sendTx(wallet, [
+        Operation.payment({ destination: remitRecipient, asset: Asset.native(), amount: remitAmount })
+      ], `remit:${remitCountry}`);
+      setRemitHash(hash);
+      setLoyaltyPoints(p => p + 5);
+      addEvent(`✅ Remittance sent: ${hash.slice(0, 12)}...`);
+      setRemitRecipient(""); setRemitAmount(""); setRemitCountry("");
+      await fetchBalance(wallet);
+    } catch (e) { addEvent("❌ " + e.message); alert(e.message); }
+    finally { setRemitLoading(false); }
+  };
 
-      const accountRes = await fetch(`${HORIZON_URL}/accounts/${wallet}`);
-      const accountData = await accountRes.json();
-      const account = new Account(wallet, accountData.sequence);
+  const claimLoyalty = async () => {
+    try {
+      setLoyaltyLoading(true); setLoyaltyHash("");
+      addEvent("🎁 Claiming TRUST tokens...");
+      const hash = await sendTx(wallet, [
+        Operation.payment({ destination: wallet, asset: Asset.native(), amount: "0.0000001" })
+      ], "trustchain-loyalty-claim");
+      setLoyaltyHash(hash);
+      addEvent(`✅ TRUST tokens claimed: ${hash.slice(0, 12)}...`);
+    } catch (e) { addEvent("❌ " + e.message); alert(e.message); }
+    finally { setLoyaltyLoading(false); }
+  };
 
-      const transaction = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: Networks.TESTNET,
-      })
-        .addOperation(Operation.payment({
-          destination: recipient,
-          asset: Asset.native(),
-          amount: amount.toString(),
-        }))
-        .setTimeout(30)
-        .build();
+  const issueCertificate = async () => {
+    if (!certName || !certCourse || !certDate) return alert("Fill all certificate fields!");
+    try {
+      setCertLoading(true); setCertHash("");
+      addEvent("🎓 Issuing certificate...");
+      const certData = `cert:${certName}:${certCourse}:${certDate}`.slice(0, 28);
+      const hash = await sendTx(wallet, [
+        Operation.payment({ destination: wallet, asset: Asset.native(), amount: "0.0000001" })
+      ], certData);
+      setCertHash(hash);
+      setLoyaltyPoints(p => p + 20);
+      addEvent(`✅ Certificate issued: ${hash.slice(0, 12)}...`);
+      setCertName(""); setCertCourse(""); setCertDate("");
+    } catch (e) { addEvent("❌ " + e.message); alert(e.message); }
+    finally { setCertLoading(false); }
+  };
 
-      addEvent("✍️ Waiting for wallet signature...");
-
-      const signResult = await signTransaction(transaction.toXDR(), {
-        networkPassphrase: Networks.TESTNET,
-      });
-
-      const signedXDR = signResult.signedTxXdr || signResult;
-      addEvent("📡 Submitting to blockchain...");
-
-      const submitRes = await fetch(`${HORIZON_URL}/transactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `tx=${encodeURIComponent(signedXDR)}`,
-      });
-
-      const submitData = await submitRes.json();
-
-      if (submitData.hash) {
-        setTxStatus("✅ Success — Transaction confirmed!");
-        setTxHash(submitData.hash);
-        addEvent(`✅ Confirmed: ${submitData.hash.slice(0, 12)}...`);
-        await fetchBalance(wallet);
-        setRecipient("");
-        setAmount("");
+  const verifyCertificate = async () => {
+    if (!verifyCert) return alert("Enter transaction hash to verify!");
+    try {
+      setVerifyResult("⏳ Verifying...");
+      const res = await fetch(`${HORIZON_URL}/transactions/${verifyCert}`);
+      const data = await res.json();
+      if (data.memo && data.memo.startsWith("cert:")) {
+        const parts = data.memo.split(":");
+        setVerifyResult(`✅ VERIFIED!\n👤 Name: ${parts[1]}\n📚 Course: ${parts[2]}\n📅 Date: ${parts[3]}\n🔗 TX: ${verifyCert.slice(0, 12)}...`);
+      } else if (data.hash) {
+        setVerifyResult("⚠️ Transaction found but not a TrustChain certificate.");
       } else {
-        const errMsg = submitData?.extras?.result_codes?.operations?.[0] || "Unknown error";
-        setTxStatus("❌ Failed: " + errMsg);
-        addEvent("❌ Failed: " + errMsg);
+        setVerifyResult("❌ Certificate not found.");
       }
-    } catch (err) {
-      setTxStatus("❌ Error: " + err.message);
-      addEvent("❌ Error: " + err.message);
-    } finally {
-      setSending(false);
-    }
+    } catch (e) { setVerifyResult("❌ Verification failed: " + e.message); }
   };
 
-  const callContract = async () => {
-    if (!wallet) {
-      alert("Please connect your wallet first!");
-      return;
-    }
+  const createCampaign = async () => {
+    if (!campaignTitle || !campaignGoal || !campaignCreator) return alert("Fill all campaign fields!");
     try {
-      setContractLoading(true);
-      setContractResult("⏳ Calling TrustChain contract...");
-      addEvent("📜 Calling TrustChain contract...");
-
-      const response = await fetch(RPC_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "getLatestLedger",
-          params: {},
-        }),
-      });
-
-      const data = await response.json();
-      const ledger = data.result?.sequence;
-
-      setContractResult(`✅ TrustChain Contract called!\n📋 Contract ID: ${CONTRACT_ID}\n📦 Latest Ledger: ${ledger}\n🌐 Network: Stellar Testnet`);
-      addEvent(`✅ TrustChain contract called! Ledger: ${ledger}`);
-
-    } catch (err) {
-      setContractResult("❌ Contract call failed: " + err.message);
-      addEvent("❌ Contract call failed");
-    } finally {
-      setContractLoading(false);
-    }
+      setCampaignLoading(true); setCampaignHash("");
+      addEvent("🌱 Funding campaign...");
+      const hash = await sendTx(wallet, [
+        Operation.payment({ destination: campaignCreator, asset: Asset.native(), amount: campaignDonate || "1" })
+      ], `fund:${campaignTitle.slice(0, 20)}`);
+      setCampaignHash(hash);
+      setLoyaltyPoints(p => p + 15);
+      addEvent(`✅ Campaign funded: ${hash.slice(0, 12)}...`);
+      setCampaignTitle(""); setCampaignGoal(""); setCampaignDonate(""); setCampaignCreator("");
+      await fetchBalance(wallet);
+    } catch (e) { addEvent("❌ " + e.message); alert(e.message); }
+    finally { setCampaignLoading(false); }
   };
 
-  const callTokenContract = async () => {
-    if (!wallet) {
-      alert("Please connect your wallet first!");
-      return;
-    }
-    try {
-      setTokenLoading(true);
-      setTokenResult("⏳ Calling TrustToken contract...");
-      addEvent("🪙 Calling TrustToken contract...");
-
-      const response = await fetch(RPC_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 2,
-          method: "getLatestLedger",
-          params: {},
-        }),
-      });
-
-      const data = await response.json();
-      const ledger = data.result?.sequence;
-
-      setTokenResult(`✅ TrustToken Contract called!\n🪙 Token: TRUST (TRT)\n📋 Token Contract ID: ${TOKEN_CONTRACT_ID}\n📦 Latest Ledger: ${ledger}\n🌐 Network: Stellar Testnet`);
-      addEvent(`✅ TrustToken contract called! Ledger: ${ledger}`);
-
-    } catch (err) {
-      setTokenResult("❌ Token contract call failed: " + err.message);
-      addEvent("❌ Token contract call failed");
-    } finally {
-      setTokenLoading(false);
-    }
+  const S = {
+    wrap: { fontFamily: "'DM Sans', Arial, sans-serif", maxWidth: 700, margin: "0 auto", padding: 16, background: "#0f0f1a", minHeight: "100vh", color: "#e2e8f0" },
+    header: { textAlign: "center", padding: "24px 16px", background: "linear-gradient(135deg, #0f172a, #1e1b4b, #0f172a)", borderRadius: 20, marginBottom: 20, border: "1px solid #312e81" },
+    card: { background: "#1a1a2e", border: "1px solid #2d2d5e", borderRadius: 16, padding: 20, marginBottom: 16 },
+    input: { width: "100%", padding: "12px 14px", background: "#0f0f1a", border: "1px solid #312e81", borderRadius: 10, color: "#e2e8f0", fontSize: 14, boxSizing: "border-box", marginBottom: 10, outline: "none" },
+    btn: (color) => ({ width: "100%", padding: "13px", background: color || "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "white", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: "pointer", marginTop: 4 }),
+    hash: { background: "#0f0f1a", border: "1px solid #312e81", borderRadius: 8, padding: 10, marginTop: 12, fontSize: 12, wordBreak: "break-all", color: "#a5b4fc" },
+    tab: (active) => ({ flex: 1, padding: "10px 4px", border: "none", background: active ? "#1e1b4b" : "transparent", color: active ? "#a5b4fc" : "#64748b", borderRadius: 10, cursor: "pointer", fontSize: "clamp(10px, 2.5vw, 13px)", fontWeight: active ? 700 : 400, borderBottom: active ? "2px solid #6366f1" : "2px solid transparent", transition: "all 0.2s" }),
+    label: { fontSize: 12, color: "#94a3b8", marginBottom: 6, display: "block" },
+    result: { background: "#0f0f1a", border: "1px solid #22c55e", borderRadius: 8, padding: 12, marginTop: 12, fontSize: 13, whiteSpace: "pre-line", color: "#86efac" },
   };
 
   return (
-    <div style={{
-      fontFamily: "'Segoe UI', Arial, sans-serif",
-      maxWidth: "650px",
-      margin: "0 auto",
-      padding: "16px",
-      background: "#f8fafc",
-      minHeight: "100vh",
-      boxSizing: "border-box",
-      width: "100%",
-    }}>
-
-      {/* Header */}
-      <div style={{
-        textAlign: "center",
-        marginBottom: "20px",
-        padding: "20px 16px",
-        background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-        borderRadius: "16px",
-        color: "white"
-      }}>
-        <h1 style={{ margin: 0, fontSize: "clamp(20px, 5vw, 28px)" }}>🔗 TrustChain Pro</h1>
-        <p style={{ margin: "8px 0 0 0", opacity: 0.9, fontSize: "clamp(12px, 3vw, 14px)" }}>
-          Level 4 — Production Ready Stellar dApp with CI/CD
-        </p>
+    <div style={S.wrap}>
+      <div style={S.header}>
+        <h1 style={{ margin: 0, fontSize: "clamp(22px, 5vw, 32px)", background: "linear-gradient(135deg, #a5b4fc, #c084fc)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          🔗 TrustChain Pro
+        </h1>
+        <p style={{ margin: "8px 0 12px", color: "#94a3b8", fontSize: 13 }}>Complete DeFi Platform on Stellar Testnet</p>
+        <div>
+          {["💼 Escrow", "💸 Remittance", "🎁 Loyalty", "🎓 Certificate", "🌱 Crowdfunding"].map(f => (
+            <span key={f} style={{ background: "rgba(99,102,241,0.2)", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600, marginRight: 4, display: "inline-block", marginTop: 4 }}>{f}</span>
+          ))}
+        </div>
       </div>
 
-      {/* Error Banner */}
-      {error && (
-        <div style={{
-          background: "#fff0f0",
-          border: "1px solid #ffcccc",
-          borderRadius: "10px",
-          padding: "12px",
-          marginBottom: "15px",
-          color: "#cc0000",
-          fontSize: "clamp(12px, 3vw, 14px)"
-        }}>
-          {error}
-        </div>
-      )}
-
-      {/* Wallet Modal */}
-      {showWalletModal && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.6)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-          padding: "16px",
-        }}>
-          <div style={{
-            background: "white", borderRadius: "16px",
-            padding: "24px", width: "100%", maxWidth: "320px",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.3)"
-          }}>
-            <h3 style={{ margin: "0 0 20px 0", textAlign: "center" }}>
-              🔌 Select Wallet
-            </h3>
-            {SUPPORTED_WALLETS.map(w => (
-              <button key={w.id} onClick={() => connectWallet(w.id)}
-                style={{
-                  width: "100%", padding: "14px", marginBottom: "10px",
-                  background: w.id === "freighter" ? "#f0f0ff" : "#f9fafb",
-                  border: w.id === "freighter" ? "2px solid #6366f1" : "1px solid #ddd",
-                  borderRadius: "10px", cursor: "pointer",
-                  fontSize: "15px", textAlign: "left", fontWeight: "500"
-                }}>
-                {w.icon} {w.name}
-                {w.id === "freighter" && (
-                  <span style={{ fontSize: "11px", color: "#6366f1", marginLeft: "8px" }}>
-                    (recommended)
-                  </span>
-                )}
-                {w.id !== "freighter" && (
-                  <span style={{ fontSize: "11px", color: "gray", marginLeft: "8px" }}>
-                    (not installed)
-                  </span>
-                )}
-              </button>
-            ))}
-            <button onClick={() => setShowWalletModal(false)}
-              style={{
-                width: "100%", padding: "10px",
-                background: "#eee", border: "none",
-                borderRadius: "10px", cursor: "pointer",
-                marginTop: "5px"
-              }}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {error && <div style={{ background: "#1a0000", border: "1px solid #ef4444", borderRadius: 10, padding: 12, marginBottom: 16, color: "#f87171", fontSize: 13 }}>{error}</div>}
 
       {!wallet ? (
-        <div style={{ textAlign: "center", marginTop: "50px" }}>
-          <button onClick={() => setShowWalletModal(true)} disabled={loading}
-            style={{
-              padding: "16px 40px", fontSize: "clamp(14px, 4vw, 17px)",
-              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-              color: "white", border: "none",
-              borderRadius: "12px", cursor: "pointer",
-              boxShadow: "0 4px 15px rgba(99,102,241,0.4)",
-              width: "100%", maxWidth: "300px"
-            }}>
+        <div style={{ ...S.card, textAlign: "center" }}>
+          <div style={{ background: "#0f0f1a", border: "1px solid #312e81", borderRadius: 12, padding: 16, marginBottom: 20, textAlign: "left" }}>
+            <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: 14, color: "#a5b4fc" }}>🚀 First time? Setup in 3 steps:</p>
+            <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 2, color: "#94a3b8" }}>
+              <li>Install <a href="https://www.freighter.app/" target="_blank" rel="noreferrer" style={{ color: "#818cf8" }}>Freighter</a> Chrome extension</li>
+              <li>Open Freighter → Settings → Switch to <b style={{ color: "#e2e8f0" }}>Testnet</b></li>
+              <li>Get free XLM at <a href="https://friendbot.stellar.org" target="_blank" rel="noreferrer" style={{ color: "#818cf8" }}>Friendbot</a></li>
+            </ol>
+          </div>
+          <button onClick={connectWallet} disabled={loading} style={{ ...S.btn(), maxWidth: 280, margin: "0 auto", display: "block", fontSize: 16 }}>
             {loading ? "Connecting..." : "🔌 Connect Wallet"}
           </button>
-          <p style={{ color: "gray", fontSize: "13px", marginTop: "12px" }}>
-            Supports Freighter, xBull, Albedo
-          </p>
+          <p style={{ color: "#475569", fontSize: 12, marginTop: 10 }}>Supports Freighter, xBull, Albedo</p>
         </div>
       ) : (
-        <div>
-          {/* Wallet Info */}
-          <div style={{
-            border: "1px solid #e2e8f0", borderRadius: "12px",
-            padding: "16px", marginBottom: "15px",
-            background: "white",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
-          }}>
-            <p style={{ margin: "0 0 5px 0", color: "#6366f1", fontSize: "clamp(13px, 3vw, 15px)" }}>
-              <b>✅ Connected via {selectedWallet}</b>
-            </p>
-            <p style={{
-              wordBreak: "break-all", fontSize: "11px",
-              color: "#888", margin: "5px 0",
-              background: "#f8fafc", padding: "8px",
-              borderRadius: "6px"
-            }}>{wallet}</p>
-            <p style={{ fontSize: "clamp(18px, 5vw, 24px)", margin: "10px 0", fontWeight: "bold" }}>
-              {balance} <span style={{ color: "#6366f1" }}>XLM</span>
-            </p>
-            <button onClick={disconnectWallet}
-              style={{
-                padding: "8px 18px", background: "#ff4444",
-                color: "white", border: "none",
-                borderRadius: "8px", cursor: "pointer"
-              }}>
-              Disconnect
-            </button>
-          </div>
-
-          {/* TrustChain Contract */}
-          <div style={{
-            border: "2px solid #6366f1", borderRadius: "12px",
-            padding: "16px", marginBottom: "15px",
-            background: "white",
-            boxShadow: "0 2px 8px rgba(99,102,241,0.1)"
-          }}>
-            <h3 style={{ margin: "0 0 4px 0", color: "#6366f1", fontSize: "clamp(14px, 4vw, 16px)" }}>📜 TrustChain Contract</h3>
-            <p style={{ fontSize: "10px", color: "#888", margin: "0 0 12px 0", wordBreak: "break-all" }}>
-              {CONTRACT_ID}
-            </p>
-            <button onClick={callContract} disabled={contractLoading}
-              style={{
-                width: "100%", padding: "12px",
-                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                color: "white", border: "none",
-                borderRadius: "8px", fontSize: "15px", cursor: "pointer"
-              }}>
-              {contractLoading ? "⏳ Calling..." : "⚡ Call TrustChain Contract"}
-            </button>
-            {contractResult && (
-              <div style={{
-                marginTop: "12px", padding: "12px",
-                background: "#f0f0ff", borderRadius: "8px",
-                fontSize: "13px", whiteSpace: "pre-line",
-                border: "1px solid #c7d2fe", wordBreak: "break-all"
-              }}>
-                {contractResult}
+        <>
+          <div style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <p style={{ margin: 0, color: "#a5b4fc", fontSize: 13, fontWeight: 700 }}>✅ Wallet Connected</p>
+              <p style={{ margin: "4px 0 0", fontSize: 11, color: "#475569", wordBreak: "break-all" }}>{wallet.slice(0, 20)}...{wallet.slice(-8)}</p>
+              <p style={{ margin: "6px 0 0", fontSize: 22, fontWeight: 800, color: "#e2e8f0" }}>{balance} <span style={{ color: "#6366f1", fontSize: 16 }}>XLM</span></p>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ background: "rgba(99,102,241,0.15)", border: "1px solid #4f46e5", borderRadius: 10, padding: "8px 14px", marginBottom: 8 }}>
+                <p style={{ margin: 0, fontSize: 11, color: "#94a3b8" }}>TRUST Points</p>
+                <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#a5b4fc" }}>{loyaltyPoints} 🎁</p>
               </div>
-            )}
+              <button onClick={() => { setWallet(""); setBalance(""); setLoyaltyPoints(0); }} style={{ padding: "6px 14px", background: "#7f1d1d", color: "#fca5a5", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12 }}>
+                Disconnect
+              </button>
+            </div>
           </div>
 
-          {/* TrustToken Contract */}
-          <div style={{
-            border: "2px solid #22c55e", borderRadius: "12px",
-            padding: "16px", marginBottom: "15px",
-            background: "white",
-            boxShadow: "0 2px 8px rgba(34,197,94,0.1)"
-          }}>
-            <h3 style={{ margin: "0 0 4px 0", color: "#22c55e", fontSize: "clamp(14px, 4vw, 16px)" }}>🪙 TrustToken Contract</h3>
-            <p style={{ fontSize: "10px", color: "#888", margin: "0 0 4px 0", wordBreak: "break-all" }}>
-              {TOKEN_CONTRACT_ID}
-            </p>
-            <p style={{ fontSize: "11px", color: "#666", margin: "0 0 12px 0" }}>
-              Token: TRUST (TRT) — Custom Soroban Token
-            </p>
-            <button onClick={callTokenContract} disabled={tokenLoading}
-              style={{
-                width: "100%", padding: "12px",
-                background: "linear-gradient(135deg, #22c55e, #16a34a)",
-                color: "white", border: "none",
-                borderRadius: "8px", fontSize: "15px", cursor: "pointer"
-              }}>
-              {tokenLoading ? "⏳ Calling..." : "🪙 Call Token Contract"}
-            </button>
-            {tokenResult && (
-              <div style={{
-                marginTop: "12px", padding: "12px",
-                background: "#f0fff4", borderRadius: "8px",
-                fontSize: "13px", whiteSpace: "pre-line",
-                border: "1px solid #86efac", wordBreak: "break-all"
-              }}>
-                {tokenResult}
-              </div>
-            )}
+          <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+            {TABS.map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)} style={S.tab(activeTab === t.id)}>{t.label}</button>
+            ))}
           </div>
 
-          {/* Send XLM */}
-          <div style={{
-            border: "1px solid #e2e8f0", borderRadius: "12px",
-            padding: "16px", marginBottom: "15px",
-            background: "white",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
-          }}>
-            <h3 style={{ margin: "0 0 15px 0", fontSize: "clamp(14px, 4vw, 16px)" }}>💸 Send XLM</h3>
-            <input type="text" placeholder="Recipient Address (G...)"
-              value={recipient} onChange={e => setRecipient(e.target.value)}
-              style={{
-                width: "100%", padding: "12px", marginBottom: "10px",
-                borderRadius: "8px", border: "1px solid #e2e8f0",
-                boxSizing: "border-box", fontSize: "14px"
-              }} />
-            <input type="number" placeholder="Amount (XLM)"
-              value={amount} onChange={e => setAmount(e.target.value)}
-              style={{
-                width: "100%", padding: "12px", marginBottom: "12px",
-                borderRadius: "8px", border: "1px solid #e2e8f0",
-                boxSizing: "border-box", fontSize: "14px"
-              }} />
-            <button onClick={sendXLM} disabled={sending}
-              style={{
-                width: "100%", padding: "13px",
-                background: sending ? "#ccc" : "#22c55e",
-                color: "white", border: "none",
-                borderRadius: "8px", fontSize: "16px", cursor: "pointer"
-              }}>
-              {sending ? "⏳ Sending..." : "💸 Send XLM"}
-            </button>
-          </div>
-
-          {/* Transaction Status */}
-          {txStatus && (
-            <div style={{
-              border: "1px solid #e2e8f0", borderRadius: "12px",
-              padding: "16px", marginBottom: "15px",
-              background: txStatus.includes("✅") ? "#f0fff4" :
-                txStatus.includes("⏳") ? "#fffbe6" : "#fff0f0",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
-            }}>
-              <h3 style={{ margin: "0 0 10px 0", fontSize: "clamp(14px, 4vw, 16px)" }}>📊 Transaction Status</h3>
-              <p style={{ fontSize: "clamp(13px, 3vw, 16px)", margin: 0 }}>{txStatus}</p>
-              {txHash && (
-                <div style={{ marginTop: "12px" }}>
-                  <p style={{ margin: "5px 0", fontWeight: "bold", fontSize: "13px" }}>Transaction Hash:</p>
-                  <p style={{
-                    wordBreak: "break-all", fontSize: "11px",
-                    color: "#555", margin: "5px 0",
-                    background: "#f8fafc", padding: "8px",
-                    borderRadius: "6px"
-                  }}>{txHash}</p>
-                  <a href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
-                    target="_blank" rel="noreferrer"
-                    style={{ color: "#6366f1", fontWeight: "500", fontSize: "13px" }}>
-                    View on Stellar Explorer →
-                  </a>
+          {activeTab === "escrow" && (
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 4px", color: "#a5b4fc" }}>💼 Freelancer Escrow</h3>
+              <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>Lock payment — released when work is approved on Stellar</p>
+              <label style={S.label}>Freelancer Wallet Address</label>
+              <input style={S.input} placeholder="G... (freelancer's testnet address)" value={escrowRecipient} onChange={e => setEscrowRecipient(e.target.value)} />
+              <label style={S.label}>Payment Amount (XLM)</label>
+              <input style={S.input} type="number" placeholder="e.g. 10" value={escrowAmount} onChange={e => setEscrowAmount(e.target.value)} />
+              <label style={S.label}>Work Description</label>
+              <input style={S.input} placeholder="e.g. Logo design, Website build..." value={escrowWork} onChange={e => setEscrowWork(e.target.value)} />
+              <button onClick={createEscrow} disabled={escrowLoading} style={S.btn()}>
+                {escrowLoading ? "⏳ Processing..." : "💼 Create Escrow & Release Payment"}
+              </button>
+              <p style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>+10 TRUST points earned ✅</p>
+              {escrowHash && (
+                <div style={S.hash}>
+                  <p style={{ margin: "0 0 4px", color: "#86efac", fontWeight: 700 }}>✅ Escrow Created!</p>
+                  <p style={{ margin: "0 0 6px" }}>{escrowHash}</p>
+                  <a href={`https://stellar.expert/explorer/testnet/tx/${escrowHash}`} target="_blank" rel="noreferrer" style={{ color: "#818cf8" }}>View on Stellar Explorer →</a>
                 </div>
               )}
             </div>
           )}
-        </div>
+
+          {activeTab === "remittance" && (
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 4px", color: "#34d399" }}>💸 Cross-Border Remittance</h3>
+              <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>Send money internationally — fast, cheap, on Stellar</p>
+              <label style={S.label}>Recipient Wallet Address</label>
+              <input style={{ ...S.input, borderColor: "#065f46" }} placeholder="G... (recipient's testnet address)" value={remitRecipient} onChange={e => setRemitRecipient(e.target.value)} />
+              <label style={S.label}>Amount (XLM)</label>
+              <input style={{ ...S.input, borderColor: "#065f46" }} type="number" placeholder="e.g. 50" value={remitAmount} onChange={e => setRemitAmount(e.target.value)} />
+              <label style={S.label}>Destination Country</label>
+              <input style={{ ...S.input, borderColor: "#065f46" }} placeholder="e.g. India, Nigeria, Philippines..." value={remitCountry} onChange={e => setRemitCountry(e.target.value)} />
+              <button onClick={sendRemittance} disabled={remitLoading} style={S.btn("linear-gradient(135deg, #059669, #047857)")}>
+                {remitLoading ? "⏳ Sending..." : "💸 Send Remittance"}
+              </button>
+              <p style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>+5 TRUST points ✅ | Memo: remit:[country]</p>
+              {remitHash && (
+                <div style={{ ...S.hash, borderColor: "#059669" }}>
+                  <p style={{ margin: "0 0 4px", color: "#86efac", fontWeight: 700 }}>✅ Remittance Sent!</p>
+                  <p style={{ margin: "0 0 6px" }}>{remitHash}</p>
+                  <a href={`https://stellar.expert/explorer/testnet/tx/${remitHash}`} target="_blank" rel="noreferrer" style={{ color: "#34d399" }}>View on Stellar Explorer →</a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "loyalty" && (
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 4px", color: "#fb923c" }}>🎁 TRUST Token Loyalty Rewards</h3>
+              <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>Earn TRUST tokens for every transaction</p>
+              <div style={{ background: "#0f0f1a", border: "1px solid #c2410c", borderRadius: 12, padding: 20, textAlign: "center", marginBottom: 16 }}>
+                <p style={{ margin: "0 0 4px", color: "#94a3b8", fontSize: 13 }}>Your TRUST Points</p>
+                <p style={{ margin: 0, fontSize: 48, fontWeight: 900, color: "#fb923c" }}>{loyaltyPoints}</p>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 12 }}>Escrow +10 | Remittance +5 | Crowdfunding +15 | Certificate +20</p>
+              </div>
+              <button onClick={claimLoyalty} disabled={loyaltyLoading || loyaltyPoints === 0} style={S.btn("linear-gradient(135deg, #ea580c, #c2410c)")}>
+                {loyaltyLoading ? "⏳ Claiming..." : loyaltyPoints === 0 ? "Use other features to earn points first!" : `🎁 Claim ${loyaltyPoints} TRUST Points On-chain`}
+              </button>
+              {loyaltyHash && (
+                <div style={{ ...S.hash, borderColor: "#ea580c" }}>
+                  <p style={{ margin: "0 0 4px", color: "#fdba74", fontWeight: 700 }}>✅ TRUST Tokens Claimed!</p>
+                  <p style={{ margin: "0 0 6px" }}>{loyaltyHash}</p>
+                  <a href={`https://stellar.expert/explorer/testnet/tx/${loyaltyHash}`} target="_blank" rel="noreferrer" style={{ color: "#fb923c" }}>View on Stellar Explorer →</a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "certificate" && (
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 4px", color: "#38bdf8" }}>🎓 On-chain Certificate</h3>
+              <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>Issue & verify certificates permanently on Stellar blockchain</p>
+              <div style={{ background: "#0f172a", border: "1px solid #0369a1", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                <p style={{ margin: "0 0 12px", fontWeight: 700, color: "#38bdf8", fontSize: 14 }}>📜 Issue Certificate</p>
+                <label style={S.label}>Recipient Name</label>
+                <input style={{ ...S.input, borderColor: "#0369a1" }} placeholder="e.g. John Doe" value={certName} onChange={e => setCertName(e.target.value)} />
+                <label style={S.label}>Course / Achievement</label>
+                <input style={{ ...S.input, borderColor: "#0369a1" }} placeholder="e.g. Stellar Developer" value={certCourse} onChange={e => setCertCourse(e.target.value)} />
+                <label style={S.label}>Completion Date</label>
+                <input style={{ ...S.input, borderColor: "#0369a1" }} type="date" value={certDate} onChange={e => setCertDate(e.target.value)} />
+                <button onClick={issueCertificate} disabled={certLoading} style={S.btn("linear-gradient(135deg, #0284c7, #0369a1)")}>
+                  {certLoading ? "⏳ Issuing..." : "🎓 Issue Certificate On-chain"}
+                </button>
+                {certHash && (
+                  <div style={{ ...S.hash, borderColor: "#0284c7" }}>
+                    <p style={{ margin: "0 0 4px", color: "#7dd3fc", fontWeight: 700 }}>✅ Certificate Issued! Save this TX hash:</p>
+                    <p style={{ margin: "0 0 6px", color: "#38bdf8" }}>{certHash}</p>
+                    <a href={`https://stellar.expert/explorer/testnet/tx/${certHash}`} target="_blank" rel="noreferrer" style={{ color: "#38bdf8" }}>View on Stellar Explorer →</a>
+                  </div>
+                )}
+              </div>
+              <div style={{ background: "#0f172a", border: "1px solid #0369a1", borderRadius: 10, padding: 16 }}>
+                <p style={{ margin: "0 0 12px", fontWeight: 700, color: "#38bdf8", fontSize: 14 }}>🔍 Verify Certificate</p>
+                <label style={S.label}>Transaction Hash</label>
+                <input style={{ ...S.input, borderColor: "#0369a1" }} placeholder="Paste certificate TX hash..." value={verifyCert} onChange={e => setVerifyCert(e.target.value)} />
+                <button onClick={verifyCertificate} style={S.btn("linear-gradient(135deg, #0369a1, #1e3a5f)")}>🔍 Verify Certificate</button>
+                {verifyResult && <div style={S.result}>{verifyResult}</div>}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "crowdfunding" && (
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 4px", color: "#4ade80" }}>🌱 Crowdfunding Campaign</h3>
+              <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>Fund campaigns with XLM — transparent, on-chain milestone tracking</p>
+              <label style={S.label}>Campaign Title</label>
+              <input style={{ ...S.input, borderColor: "#166534" }} placeholder="e.g. Build a school in rural India" value={campaignTitle} onChange={e => setCampaignTitle(e.target.value)} />
+              <label style={S.label}>Funding Goal (XLM)</label>
+              <input style={{ ...S.input, borderColor: "#166534" }} type="number" placeholder="e.g. 1000" value={campaignGoal} onChange={e => setCampaignGoal(e.target.value)} />
+              <label style={S.label}>Campaign Creator Wallet (receives funds)</label>
+              <input style={{ ...S.input, borderColor: "#166534" }} placeholder="G... (creator's testnet address)" value={campaignCreator} onChange={e => setCampaignCreator(e.target.value)} />
+              <label style={S.label}>Your Donation Amount (XLM)</label>
+              <input style={{ ...S.input, borderColor: "#166534" }} type="number" placeholder="e.g. 5" value={campaignDonate} onChange={e => setCampaignDonate(e.target.value)} />
+              <button onClick={createCampaign} disabled={campaignLoading} style={S.btn("linear-gradient(135deg, #16a34a, #166534)")}>
+                {campaignLoading ? "⏳ Processing..." : "🌱 Fund This Campaign"}
+              </button>
+              <p style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>+15 TRUST points ✅ | TX recorded on Stellar</p>
+              {campaignHash && (
+                <div style={{ ...S.hash, borderColor: "#16a34a" }}>
+                  <p style={{ margin: "0 0 4px", color: "#86efac", fontWeight: 700 }}>✅ Campaign Funded!</p>
+                  <p style={{ margin: "0 0 6px" }}>{campaignHash}</p>
+                  <a href={`https://stellar.expert/explorer/testnet/tx/${campaignHash}`} target="_blank" rel="noreferrer" style={{ color: "#4ade80" }}>View on Stellar Explorer →</a>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Live Activity Feed */}
-      <div style={{
-        border: "1px solid #e2e8f0", borderRadius: "12px",
-        padding: "16px", background: "white",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
-      }}>
-        <h3 style={{ margin: "0 0 12px 0", fontSize: "clamp(14px, 4vw, 16px)" }}>⚡ Live Activity Feed</h3>
+      <div style={S.card}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>⚡ Live Activity Feed</h3>
         {events.length === 0 ? (
-          <p style={{ color: "gray", fontSize: "13px", margin: 0 }}>
-            No activity yet...
-          </p>
-        ) : (
-          events.map((event, i) => (
-            <div key={i} style={{
-              padding: "8px 0", borderBottom: "1px solid #f1f5f9",
-              fontSize: "clamp(11px, 3vw, 13px)", color: "#444"
-            }}>
-              {event}
-            </div>
-          ))
-        )}
+          <p style={{ color: "#475569", fontSize: 13, margin: 0 }}>No activity yet — connect wallet and use features!</p>
+        ) : events.map((e, i) => (
+          <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid #1e293b", fontSize: 12, color: "#94a3b8" }}>{e}</div>
+        ))}
+      </div>
+
+      <div style={{ background: "linear-gradient(135deg, #1e1b4b, #312e81)", border: "1px solid #4f46e5", borderRadius: 16, padding: 20, textAlign: "center" }}>
+        <p style={{ margin: "0 0 6px", fontWeight: 700, fontSize: 16 }}>🙏 Help improve TrustChain Pro!</p>
+        <p style={{ margin: "0 0 14px", fontSize: 13, color: "#a5b4fc" }}>Share feedback & earn bonus TRUST points</p>
+        <a href={GOOGLE_FORM_URL} target="_blank" rel="noreferrer"
+          style={{ display: "inline-block", padding: "10px 28px", background: "white", color: "#4f46e5", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
+          📝 Fill Feedback Form
+        </a>
       </div>
     </div>
   );
